@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
@@ -650,6 +651,24 @@ func (c *Container) Resume() error {
 func (c *Container) Cat(files []string, out *os.File) error {
 	log.Debugf("Cat in container, cid: %s, files: %+v", c.ID, files)
 	return c.Sandbox.Cat(c.ID, files, out)
+}
+
+// Usage displays memory used by the application.
+func (c *Container) Usage(full bool, m *control.MemoryUsage) error {
+	log.Debugf("Usage in container, cid: %s, full: %v", c.ID, full)
+	return c.Sandbox.Usage(c.ID, full, m)
+}
+
+// UsageFD shows application memory usage using two donated FDs.
+func (c *Container) UsageFD(mem **usage.RTMemoryStats, filememTotal *uint64) error {
+	log.Debugf("UsageFD in container, cid: %s", c.ID)
+	return c.Sandbox.UsageFD(c.ID, mem, filememTotal)
+}
+
+// Stream dumps all events to out.
+func (c *Container) Stream(filters []string, out *os.File) error {
+	log.Debugf("Stream in container, cid: %s", c.ID)
+	return c.Sandbox.Stream(c.ID, filters, out)
 }
 
 // State returns the metadata of the container.

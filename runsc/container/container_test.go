@@ -39,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -2652,6 +2653,143 @@ func TestCat(t *testing.T) {
 		t.Fatalf("Read out: %v", err)
 	}
 	if got, want := string(buf), content; !strings.Contains(got, want) {
+		t.Errorf("out got %s, want include %s", buf, want)
+	}
+}
+
+// TestUsage checks that usage generates the expected memory usage.
+func TestUsage(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	for _, full := range []bool{false, true} {
+		var m control.MemoryUsage
+		if err := cont.Usage(full, &m); err != nil {
+			t.Fatalf("error usage from container: %v", err)
+		}
+		if m.Mapped == 0 {
+			t.Errorf("Usage mapped got zero")
+		}
+		if m.Total == 0 {
+			t.Errorf("Usage total got zero")
+		}
+		if full {
+			if m.System == 0 {
+				t.Errorf("Usage system got zero")
+			}
+			if m.Anonymous == 0 {
+				t.Errorf("Usage anonymous got zero")
+			}
+		}
+	}
+}
+
+// TestUsageFD checks that usagefd generates the expected memory usage.
+func TestUsageFD(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	var m *usage.RTMemoryStats
+	filememTotal := uint64(0)
+	if err := cont.UsageFD(&m, &filememTotal); err != nil {
+		t.Fatalf("error usageFD from container: %v", err)
+	}
+
+	if m.RTMapped == 0 {
+		t.Errorf("UsageFD Mapped got zero")
+	}
+	if filememTotal == 0 {
+		t.Errorf("UsageFD filememTotal got zero")
+	}
+}
+
+// TestStream checks that Stream dumps expected events.
+func TestStream(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	conf.Strace = true
+	conf.StraceEvent = true
+	conf.StraceSyscalls = ""
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Create(): %v", err)
+	}
+
+	// Spawn a new thread to Stream events as it blocks indefinitely.
+	go func() {
+		cont.Stream(nil, w)
+	}()
+
+	buf := make([]byte, 1024)
+	if _, err := r.Read(buf); err != nil {
+		t.Fatalf("Read out: %v", err)
+	}
+
+	// A syscall strace event includes "Strace".
+	if got, want := string(buf), "Strace"; !strings.Contains(got, want) {
 		t.Errorf("out got %s, want include %s", buf, want)
 	}
 }
