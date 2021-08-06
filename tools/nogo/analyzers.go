@@ -117,11 +117,17 @@ func register(all []*analysis.Analyzer) {
 func init() {
 	// Add all staticcheck analyzers.
 	for _, a := range staticcheck.Analyzers {
-		AllAnalyzers = append(AllAnalyzers, a)
+		AllAnalyzers = append(AllAnalyzers, a.Analyzer)
 	}
 	// Add all stylecheck analyzers.
 	for _, a := range stylecheck.Analyzers {
-		AllAnalyzers = append(AllAnalyzers, a)
+		// Disable https://staticcheck.io/docs/checks#ST1023
+		// "Redundant type in variable declaration".
+		// This analyzer makes checks on generated proto code fail.
+		if a.Analyzer.Name == "ST1023" {
+			continue
+		}
+		AllAnalyzers = append(AllAnalyzers, a.Analyzer)
 	}
 
 	// Register lists.
